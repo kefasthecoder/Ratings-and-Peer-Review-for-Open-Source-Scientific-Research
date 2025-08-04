@@ -3,6 +3,8 @@
 (define-constant ERR-ALREADY-REVIEWED (err u102))
 (define-constant ERR-PAPER-NOT-FOUND (err u103))
 (define-constant ERR-NOT-VERIFIED (err u104))
+(define-constant ERR-COLLABORATION-EXISTS (err u105))
+(define-constant ERR-INVALID-EXPERTISE (err u106))
 
 (define-data-var admin principal tx-sender)
 
@@ -37,6 +39,26 @@
   {
     amount: uint,
     funded-at: uint
+  }
+)
+
+(define-map researcher-expertise
+  principal
+  {
+    domain: (string-ascii 32),
+    keywords: (list 5 (string-ascii 16)),
+    collaboration-score: uint,
+    profile-updated: uint
+  }
+)
+
+(define-map collaboration-requests
+  {requester: principal, target: principal}
+  {
+    message: (string-ascii 256),
+    expertise-match: uint,
+    created-at: uint,
+    status: (string-ascii 16)
   }
 )
 
@@ -124,4 +146,73 @@
 
 (define-read-only (is-verified-researcher (address principal))
   (is-some (map-get? verified-researchers address))
+)
+
+(define-public (update-expertise-profile (domain (string-ascii 32)) (keywords (list 5 (string-ascii 16))))
+  (let ((researcher-data (map-get? verified-researchers tx-sender)))
+    (asserts! (is-some researcher-data) ERR-NOT-VERIFIED)
+    (asserts! (> (len domain) u0) ERR-INVALID-EXPERTISE)
+    (ok (map-set researcher-expertise tx-sender {
+      domain: domain,
+      keywords: keywords,
+      collaboration-score: u0,
+      profile-updated: burn-block-height
+    }))
+  )
+)
+
+(define-public (request-collaboration (target principal) (message (string-ascii 256)))
+  (let ((requester-profile (map-get? researcher-expertise tx-sender))
+        (target-profile (map-get? researcher-expertise target))
+        (existing-request (map-get? collaboration-requests {requester: tx-sender, target: target})))
+    (asserts! (is-some requester-profile) ERR-NOT-VERIFIED)
+    (asserts! (is-some target-profile) ERR-NOT-VERIFIED)
+    (asserts! (is-none existing-request) ERR-COLLABORATION-EXISTS)
+    (asserts! (not (is-eq tx-sender target)) ERR-NOT-AUTHORIZED)
+    (let ((match-score (calculate-expertise-match 
+                         (get keywords (unwrap-panic requester-profile))
+                         (get keywords (unwrap-panic target-profile)))))
+      (ok (map-set collaboration-requests {requester: tx-sender, target: target} {
+        message: message,
+        expertise-match: match-score,
+        created-at: burn-block-height,
+        status: "pending"
+      }))
+    )
+  )
+)
+
+(define-public (respond-collaboration (requester principal) (accept bool))
+  (let ((request (map-get? collaboration-requests {requester: requester, target: tx-sender})))
+    (asserts! (is-some request) ERR-PAPER-NOT-FOUND)
+    (let ((new-status (if accept "accepted" "rejected")))
+      (ok (map-set collaboration-requests {requester: requester, target: tx-sender}
+        (merge (unwrap-panic request) {status: new-status})
+      ))
+    )
+  )
+)
+
+(define-private (calculate-expertise-match (keywords1 (list 5 (string-ascii 16))) (keywords2 (list 5 (string-ascii 16))))
+  (let ((matches (fold check-keyword-match keywords1 u0)))
+    (if (> matches u0) (+ (* matches u20) u10) u0)
+  )
+)
+
+(define-private (check-keyword-match (keyword (string-ascii 16)) (acc uint))
+  (+ acc u1)
+)
+
+(define-read-only (get-collaboration-requests (researcher principal))
+  (let ((as-requester (map-get? collaboration-requests {requester: researcher, target: tx-sender}))
+        (as-target (map-get? collaboration-requests {requester: tx-sender, target: researcher})))
+    (ok {
+      outgoing: as-requester,
+      incoming: as-target
+    })
+  )
+)
+
+(define-read-only (get-researcher-profile (researcher principal))
+  (ok (map-get? researcher-expertise researcher))
 )

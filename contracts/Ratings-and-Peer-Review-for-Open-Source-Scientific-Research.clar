@@ -21,7 +21,8 @@
     ipfs-hash: (string-ascii 64),
     created-at: uint,
     total-score: uint,
-    review-count: uint
+    review-count: uint,
+    version: uint
   }
 )
 
@@ -92,7 +93,8 @@
       ipfs-hash: ipfs-hash,
       created-at: burn-block-height,
       total-score: u0,
-      review-count: u0
+      review-count: u0,
+      version: u1
     }))
   )
 )
@@ -215,4 +217,19 @@
 
 (define-read-only (get-researcher-profile (researcher principal))
   (ok (map-get? researcher-expertise researcher))
+)
+(define-public (update-paper (paper-id uint) (new-title (string-ascii 128)) (new-ipfs-hash (string-ascii 64)))
+  (let ((paper (map-get? research-papers paper-id)))
+    (asserts! (is-some paper) ERR-PAPER-NOT-FOUND)
+    (asserts! (is-eq tx-sender (get author (unwrap-panic paper))) ERR-NOT-AUTHORIZED)
+    (ok (map-set research-papers paper-id
+      (merge (unwrap-panic paper)
+        {
+          title: new-title,
+          ipfs-hash: new-ipfs-hash,
+          version: (+ (get version (unwrap-panic paper)) u1)
+        }
+      )
+    ))
+  )
 )

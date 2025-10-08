@@ -22,7 +22,8 @@
     created-at: uint,
     total-score: uint,
     review-count: uint,
-    version: uint
+    version: uint,
+    tags: (list 5 (string-ascii 16))
   }
 )
 
@@ -63,6 +64,11 @@
   }
 )
 
+(define-map paper-tags
+  (string-ascii 16)
+  (list 100 uint)
+)
+
 (define-data-var paper-id-nonce uint u0)
 
 (define-public (set-admin (new-admin principal))
@@ -82,20 +88,35 @@
   )
 )
 
-(define-public (publish-paper (title (string-ascii 128)) (ipfs-hash (string-ascii 64)))
+(define-public (publish-paper (title (string-ascii 128)) (ipfs-hash (string-ascii 64)) (tags (list 5 (string-ascii 16))))
   (let ((researcher-data (map-get? verified-researchers tx-sender))
         (new-id (+ (var-get paper-id-nonce) u1)))
     (asserts! (is-some researcher-data) ERR-NOT-VERIFIED)
     (var-set paper-id-nonce new-id)
-    (ok (map-set research-papers new-id {
+    (map-set research-papers new-id {
       author: tx-sender,
       title: title,
       ipfs-hash: ipfs-hash,
       created-at: burn-block-height,
       total-score: u0,
       review-count: u0,
-      version: u1
-    }))
+      version: u1,
+      tags: tags
+    })
+    (let ((tag0 (element-at? tags u0))
+          (tag1 (element-at? tags u1))
+          (tag2 (element-at? tags u2))
+          (tag3 (element-at? tags u3))
+          (tag4 (element-at? tags u4)))
+      (begin
+        (match tag0 (add-paper-to-tag tag0 new-id) true)
+        (match tag1 (add-paper-to-tag tag1 new-id) true)
+        (match tag2 (add-paper-to-tag tag2 new-id) true)
+        (match tag3 (add-paper-to-tag tag3 new-id) true)
+        (match tag4 (add-paper-to-tag tag4 new-id) true)
+        (ok true)
+      )
+    )
   )
 )
 
@@ -205,6 +226,10 @@
   (+ acc u1)
 )
 
+(define-private (add-paper-to-tag (tag (string-ascii 16)) (paper-id uint))
+  (map-set paper-tags tag (append (default-to (list) (map-get? paper-tags tag)) paper-id))
+)
+
 (define-read-only (get-collaboration-requests (researcher principal))
   (let ((as-requester (map-get? collaboration-requests {requester: researcher, target: tx-sender}))
         (as-target (map-get? collaboration-requests {requester: tx-sender, target: researcher})))
@@ -218,6 +243,11 @@
 (define-read-only (get-researcher-profile (researcher principal))
   (ok (map-get? researcher-expertise researcher))
 )
+
+(define-read-only (get-papers-by-tag (tag (string-ascii 16)))
+  (ok (map-get? paper-tags tag))
+)
+
 (define-public (update-paper (paper-id uint) (new-title (string-ascii 128)) (new-ipfs-hash (string-ascii 64)))
   (let ((paper (map-get? research-papers paper-id)))
     (asserts! (is-some paper) ERR-PAPER-NOT-FOUND)

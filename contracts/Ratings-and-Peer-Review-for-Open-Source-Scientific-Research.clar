@@ -66,7 +66,12 @@
 
 (define-map paper-tags
   (string-ascii 16)
-  (list 100 uint)
+  (list 101 uint)
+)
+
+(define-map paper-citations
+  uint
+  {citation-count: uint}
 )
 
 (define-data-var paper-id-nonce uint u0)
@@ -227,7 +232,12 @@
 )
 
 (define-private (add-paper-to-tag (tag (string-ascii 16)) (paper-id uint))
-  (map-set paper-tags tag (append (default-to (list) (map-get? paper-tags tag)) paper-id))
+  (let ((current-list (default-to (list) (map-get? paper-tags tag))))
+    (if (< (len current-list) u100)
+      (map-set paper-tags tag (append current-list paper-id))
+      true
+    )
+  )
 )
 
 (define-read-only (get-collaboration-requests (researcher principal))
@@ -262,4 +272,20 @@
       )
     ))
   )
+)
+
+(define-public (cite-paper (paper-id uint))
+  (let ((paper (map-get? research-papers paper-id))
+        (researcher-data (map-get? verified-researchers tx-sender))
+        (current-citations (default-to {citation-count: u0} (map-get? paper-citations paper-id))))
+    (asserts! (is-some paper) ERR-PAPER-NOT-FOUND)
+    (asserts! (is-some researcher-data) ERR-NOT-VERIFIED)
+    (ok (map-set paper-citations paper-id
+      {citation-count: (+ (get citation-count current-citations) u1)}
+    ))
+  )
+)
+
+(define-read-only (get-paper-citations (paper-id uint))
+  (ok (map-get? paper-citations paper-id))
 )
